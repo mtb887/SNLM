@@ -1,0 +1,154 @@
+
+# 📦 Production Architecture Document: Social Media Sentiment Analysis Platform
+
+## 1. Purpose
+
+This document outlines the architecture, components, and rationale for deploying the Social Media Sentiment Analysis Platform in a production-grade cloud environment. The production version builds on the proof-of-concept (PoC) and development environment by implementing scalable, secure, and cloud-native services.
+
+---
+
+## 2. Overview of the Production Environment
+
+In the production version of the platform:
+
+- All infrastructure is deployed in the **cloud** (e.g., AWS).
+- Ingestion and transformation jobs are **automated and scheduled**.
+- **Security, observability, and compliance** are integrated at every stage.
+- The system is designed for **horizontal and vertical scaling**.
+
+---
+
+## 3. Data Ingestion (Real-time & Batch)
+
+### Sources
+- Social media platforms: Twitter (X), Facebook, Instagram, LinkedIn
+
+### Tools & Technologies
+- **Python ingestion scripts**: Customized for each API
+- **AWS Lambda** (optional): Trigger lightweight ingestion functions
+- **Apache Kafka (AWS MSK)**:
+  - Streams data into the platform in real time
+  - Each platform writes to its own Kafka topic
+
+### Real-time Flow
+```
+Social Media APIs → Kafka Topics → Spark Streaming → Cleaned Layer
+```
+
+### Batch Flow
+- Data is also fetched **every 2 hours** and stored in **Amazon S3** as JSON files.
+
+---
+
+## 4. Storage Design
+
+### Amazon S3
+
+| Layer   | Description                                      | Access Control      |
+|---------|--------------------------------------------------|---------------------|
+| Bronze  | Raw JSON data from APIs                          | Restricted (Engineers only) |
+| Silver  | Cleaned Parquet data post-PII sanitization       | Analysts & Data Science |
+| Gold    | Aggregated, curated data for BI/ML               | BI/ML Teams         |
+
+- All data is encrypted at rest (SSE-KMS).
+- Partitioning is based on date and platform for fast query access.
+
+---
+
+## 5. Processing & Transformation
+
+### Tool: Apache Spark (on AWS EMR or Databricks)
+
+- Consumes from Kafka (real-time) and S3 (batch)
+- Cleans data:
+  - Handles missing values
+  - Removes duplicates
+  - Extracts relevant fields
+  - Applies **sentiment analysis** using `TextBlob` or `VADER`
+- Sanitizes PII:
+  - Removes names/usernames
+  - Hashes IDs where applicable
+
+Output: Cleaned Parquet files stored in the Silver Layer.
+
+---
+
+## 6. Aggregation & Gold Layer
+
+### Tool: PySpark
+
+- Aggregates sentiment over time, topics, and platforms
+- Joins with enriched data if available
+- Stores outputs in:
+  - **S3 (Gold Layer)** – partitioned by platform and date
+  - **PostgreSQL** – used for dashboards
+  - **Snowflake or Databricks** – large-scale analytics and ad hoc queries
+
+---
+
+## 7. Orchestration & Scheduling
+
+### Tools:
+- **Apache Airflow**
+  - Runs scheduled DAGs for:
+    - Data ingestion (batch)
+    - Cleaning and PII sanitation
+    - Aggregation
+  - Provides logging, alerting, and retries
+
+- **AWS Step Functions**
+  - Used for mission-critical workflows
+  - Coordinates multi-step batch processes across services
+
+---
+
+## 8. Visualization Layer
+
+### Tools:
+- **Power BI**: BI dashboards for business users
+- **Streamlit**: Lightweight dashboards for near real-time feedback
+- **SQL clients**: For power users to connect directly to PostgreSQL
+
+---
+
+## 9. Scalability and Reliability
+
+| Component         | Scaling Strategy                                      |
+|------------------|--------------------------------------------------------|
+| Kafka             | Scale partitions & brokers in AWS MSK                 |
+| Spark             | Auto-scale clusters with EMR or Databricks            |
+| S3                | Unlimited storage, lifecycle policies for archiving   |
+| Airflow           | Celery executor, horizontal scale DAG execution       |
+| PostgreSQL        | Scale vertically or migrate to Amazon Aurora          |
+| Dashboards        | Deploy with CDN or horizontal load balancer           |
+
+---
+
+## 10. Monitoring, Logging, and Alerts
+
+| Tool              | Purpose                                                |
+|------------------|--------------------------------------------------------|
+| CloudWatch        | Logs for ingestion scripts and Spark jobs             |
+| Kafka Monitoring  | Broker metrics and health checks                      |
+| Airflow UI        | Task status and retry logs                            |
+| AWS SNS           | Email/SMS alerts for failures or thresholds exceeded  |
+
+---
+
+## 11. Security and Compliance
+
+- **IAM roles and least-privilege access** for all services
+- **PII Handling**:
+  - Raw data is restricted and encrypted
+  - Only sanitized data is exposed downstream
+- **Logging and auditing**:
+  - AWS CloudTrail enabled for all service access
+- **Compliance**:
+  - Designed for GDPR and POPIA compliance
+
+---
+
+## 12. Summary
+
+The production deployment of this platform leverages highly scalable, fault-tolerant cloud services including AWS S3, Kafka (MSK), Spark (EMR), Airflow, PostgreSQL, and visualization tools. It enables real-time and historical sentiment analysis of social data while maintaining strict compliance and data governance standards. This architecture is built to evolve as data volume grows and analytics needs become more complex.
+
